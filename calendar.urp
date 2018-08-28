@@ -1,0 +1,12 @@
+allow url *
+allow mime *
+allow responseHeader *
+allow requestHeader *
+allow meta *
+rewrite url Main/main
+rewrite style Styles/* [-]
+
+$/list
+$/datetime
+styles
+main
