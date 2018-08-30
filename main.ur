@@ -22,7 +22,7 @@ val allMonths: months =
 val weekDays =
 	"Lu"::"Ma"::"Mi"::"Jo"::"Vi"::"Sa"::"Du"::[]
 
-fun calendarEntry setRecordField getRecordField (sc: source calendar) : xbody = 
+fun calendarMenu setRecordField (sc: source calendar) : xbody = 
 	<xml>
 		<button 
 			value="prev"
@@ -30,10 +30,6 @@ fun calendarEntry setRecordField getRecordField (sc: source calendar) : xbody =
 				c <- get sc;
 				set sc (setRecordField c Prev)
 			}
-		/>
-		<dyn signal={
-			c <- signal sc;
-			return <xml>{[getRecordField c]}</xml>}
 		/>
 		<button 
 			value="next" 
@@ -58,21 +54,38 @@ fun monthIndex i =
 fun updateField [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = int] ++ rest)) (f: int -> int) : $([nm = int] ++ rest) =
 	(r -- nm) ++ {nm = f r.nm}
 
-fun updateMonth (c: calendar) (f: int -> int) = updateField [#Month] c f
-fun updatePrevMonth (c: calendar) = updateMonth c (fn m => monthIndex (m - 1))
-fun updateNextMonth (c: calendar) = updateMonth c (fn m => monthIndex (m + 1))
-
 fun updateYear (c: calendar) (f: int -> int) = updateField [#Year] c f
 fun updatePrevYear (c: calendar) cy = updateYear c (fn y => if y - 1 < cy then cy else y - 1)
 fun updateNextYear (c: calendar) = updateYear c (fn y => y + 1)
 
-fun firstOfMonth t = fromDatetime(datetimeYear t)(datetimeMonth t) 1 0 0 0
-fun currentMonth t = fromDatetime(datetimeYear t)(datetimeMonth t) 0 0 0 0
-fun nextMonth t = fromDatetime (datetimeYear t + ((datetimeMonth t + 1) / 12)) ((datetimeMonth t + 1) % 12) 0 0 0 0
+fun updateMonth (c: calendar) (f: int -> int) = updateField [#Month] c f
 
-fun nowMonthDays () = 
-	t <- now;
-	return (diffInSeconds (currentMonth t) (nextMonth t) / (60*60*24))
+fun updatePrevMonth (c: calendar) cy = 
+	let
+		val c' = updateMonth c (fn m => monthIndex (m - 1))
+	in
+		if c.Month - 1 < 0 then
+		 updatePrevYear c' cy
+	 else
+	 	 c'
+	end
+
+fun updateNextMonth (c: calendar) = 
+	let
+		val c' = updateMonth c (fn m => monthIndex (m + 1))
+	in
+		if c.Month + 1 >= 12 then
+			updateNextYear c'
+		else
+			c'
+	end
+
+fun monthTime c i = fromDatetime (c.Year + ((c.Month + i) / 12)) ((c.Month + i) % 12) 1 0 0 0
+fun currentMonth c = monthTime c 0
+fun nextMonth c = monthTime c 1
+fun twoMonths c = monthTime c 2 
+fun monthDays t1 t2 = diffInSeconds t1 t2 / (60*60*24) 
+fun currentMonthDays c = monthDays (currentMonth c) (nextMonth c)
 
 fun fill [a] n (f: int -> a) : list a = 
 	let
@@ -87,20 +100,81 @@ fun fill [a] n (f: int -> a) : list a =
 
 fun calendarDays days : list string = List.rev(fill days (fn i => show i))
 
-fun listItems xs= List.mapX(fn x => <xml><li class={Styles.flex_item}>{[x]}</li></xml>) xs
+fun listItems xs= List.mapX(fn x => <xml><li class={Styles.days_item}>{[x]}</li></xml>) xs
 
-fun skipDays t = 
+fun skipDays c = 
 	let
-		val i = (Datetime.dayOfWeekToInt <<< Datetime.dayOfWeek <<< Datetime.fromTime <<< firstOfMonth) <| t
+		val i = (Datetime.dayOfWeekToInt <<< Datetime.dayOfWeek <<< Datetime.fromTime <<< currentMonth) <| c
 		val j = Datetime.dayOfWeekToInt Datetime.Monday
 		val k = if i - j >= 0 then i - j else neg(i - j)
 	in
 		fill(k)(fn _ => "")
 	end
 
+fun calendarWidget sc t = 
+		<xml>
+		{calendarMenu 
+			(fn c (a: action) => 
+				case a of 
+						Prev => updatePrevMonth c (datetimeYear t)
+					| Next => updateNextMonth c)
+			sc}
+		<ul class={Styles.calendar_container}>
+			<li>
+				<ul class={Styles.month_container}>
+					<li>
+						<dyn 
+							signal={
+								c <- signal sc;
+								return <xml>{[month(monthIndex c.Month) ^ " " ^ (show c.Year)]}</xml>}
+						/>
+					</li>
+					<li>
+						<ul class={Styles.days_container}>
+							<dyn 
+								signal={
+									c <- signal sc;
+									return (listItems (List.append weekDays (List.append(skipDays c)(calendarDays(currentMonthDays c)))))}
+							/>
+						</ul>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<ul class={Styles.month_container}>
+					<li>
+						<dyn 
+							signal={
+								c <- signal sc;
+								let
+									val c' = updateNextMonth c
+								in
+									return <xml>{[month(monthIndex c'.Month) ^ " " ^ (show c'.Year)]}</xml>
+								end
+							}
+						/>
+					</li>
+					<li>
+						<ul class={Styles.days_container}>
+							<dyn
+								signal={
+									c <- signal sc;
+									let
+										val c' = updateNextMonth c
+									in
+										return (listItems (List.append weekDays (List.append(skipDays c')(calendarDays (currentMonthDays c')))))
+									end
+								}
+							/>
+						</ul>
+					</li>
+				</ul>
+			</li>
+		</ul>
+	</xml>
+
 fun main () = 
 	t <- now;
-	days <- nowMonthDays ();
 	sc <- source {Year = datetimeYear t, Month = datetimeMonth t, Day = datetimeDay t};
 	return
 		<xml>
@@ -108,24 +182,6 @@ fun main () =
 				<link rel="stylesheet" href="/styles.css"/>
 			</head>
 			<body>
-				{calendarEntry 
-					(fn c (a: action) => 
-						case a of 
-								Prev => updatePrevMonth c
-							| Next => updateNextMonth c)
-					(fn c => month c.Month)
-					sc}
-				<br/>
-				{calendarEntry 
-					(fn c (a: action) => 
-						case a of
-								Prev => updatePrevYear c (datetimeYear t)
-							| Next => updateNextYear c)
-					(fn c => show c.Year) 
-					sc}
-				<br/>
-				<ul class={Styles.flex_container}>
-				{listItems (List.append weekDays (List.append(skipDays t)(calendarDays days)))}
-				</ul>
+				{calendarWidget sc t}
 			</body>
 		</xml>
