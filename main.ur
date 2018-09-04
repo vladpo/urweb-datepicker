@@ -134,14 +134,12 @@ fun listItems xs c st =
 			bd <- get st.DayMouseStates.BookedDates;
 			set st.DayMouseStates.BookedDates (seName[nm] bd md)
 
-		fun calWithDay x = withName[#Day] c.Date (read x)
-
 		fun setClicked ds b = 
 			ms <- get ds.MS;
 			set ds.MS (withName[#Clicked] ms b)
 
-		fun setClickedForDay x b = 
-			case (List.find(fn ds => ds.Date = (calWithDay x)) st.DayMouseStates) of
+		fun setClickedForDate d b = 
+			case (List.find(fn ds => ds.Date = d) st.DayMouseStates) of
 					Some(ds) => 
 					setClicked ds b			
 				|	None => ()
@@ -155,23 +153,29 @@ fun listItems xs c st =
 								let
 									val dateDayX = withName[#Day] c.Date (read x)
 								in
-									body
-								end
-								if nonEmpty x then
-									case filterClicked of 
-											[] => 
-												setBookedDate[#First] Some(calWithDay x)
-												setClickedForDay x true
-										|	ds::[] => 
-												if ds `bf` (dateDayX) || ds == dateDayX then
-													setBookedDate[#Second] Some(calWithDay x)
-												else ()
-										| ds1::ds2::[] =>
-												if 
-												setBookedDate[#Second] None
-												setBookedDate[#First] Some(calWithDay x)
-										| _ => ()
-								else ()
+									if nonEmpty x then
+										case filterClicked of 
+												[] => 
+													setBookedDate[#First] (Some dateDayX)
+													setClickedForDate dateDayX true
+											|	ds::[] => 
+													if ds `bf` (dateDayX) || ds = dateDayX then
+														setBookedDate[#Second] (Some dateDayX)
+													else ()
+											| ds1::ds2::[] =>
+													if dateDayX `bf` ds1 || ds1 `bf` dateDayX then
+														setClicked ds1 false
+														setClickedForDate dateDayX true
+														setBookedDate[#First] (Some dateDayX)
+													else if ds2 = dateDayX || ds2 `bf` dateDayX then
+														setClicked ds1 false
+														setClicked ds2 false
+														setClickedForDate dateDayX true
+														setBookedDate[#First] (Some dateDayX)
+														setBookedDate[#Second] None
+													else ()
+											| _ => ()
+									else ()
 						}
 						onmouseover={
 							fn _ =>
