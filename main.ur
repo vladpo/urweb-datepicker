@@ -1,6 +1,6 @@
 open Styles
+open Date
 
-type date = {Year: int, Month: int, Day: int}
 type calendar = {CurrentYear: int, Date: date}
 type months = list (int * string)
 datatype action = Prev | Next
@@ -56,14 +56,16 @@ fun monthIndex i =
 	else 
 		mod (neg i) 12
 
-fun updateField [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (f: a -> a) : $([nm = a] ++ rest) =
+fun mapName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (f: a -> a) : $([nm = a] ++ rest) =
 	(r -- nm) ++ {nm = f r.nm}
 
-fun updateYear (c: calendar) (f: int -> int) = updateField [date] [#Date] c (fn d => updateField [int] [#Year] d f)
+fun withName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (x: a) : $([nm = a] ++ rest) = mapName[a][nm] r (fn _ => x)
+
+fun updateYear (c: calendar) (f: int -> int) = mapName [date] [#Date] c (fn d => mapName [int] [#Year] d f)
 fun prevCalYear (c: calendar) cy = updateYear c (fn y => if y - 1 < cy then cy else y - 1)
 fun nextCalYear (c: calendar) = updateYear c (fn y => y + 1)
 
-fun updateMonth (c: calendar) (f: int -> int) = updateField [date] c (fn d => updateField [int] [#Month] d f)
+fun updateMonth (c: calendar) (f: int -> int) = mapName [date] c (fn d => mapName [int] [#Month] d f)
 
 fun updatePrevMonth (c: calendar) cy = 
 	let
@@ -94,6 +96,9 @@ fun currentMonthDays c = monthDays (currentMonth c) (nextMonth c)
 
 fun identity [a] x = x
 
+fun isEmpty s = strlenGe s 0
+fun nonEmpty s = not (isEmpty s 0)
+
 fun fillWhile [a] [b] (init: y) (f: y -> option y) (g: y -> x) : list x =
 	let
 		fun fillWhile' next acc = 
@@ -115,23 +120,66 @@ fun fill [a] n (f: int -> a) : list a =
 		fillWhile 1 fill' f
 	end
 
-fun calendarDays days : list string = List.rev(fill days (fn i => show i))
+fun calDays days : list string = List.rev(fill days (fn i => show i))
 
-fun listItems xs st = 
-	List.mapX(
-		fn x => 
-			<xml>
-				<li
-					onclick = {
-						fn _ =>
-							List.map(st.
-							set dss 
-					onmouseover={
-						fn _ =>
-							List.find
-					dynClass={Styles.days_item}>{[x]}
-				</li>
-			</xml>) xs
+fun listItems xs c st = 
+	let
+		val filterClicked = 
+			List.filterM(
+				fn ds => 
+					ms <- signal ds.MS
+					return ms.Clicked) st.DayMouseStates
+		
+		fun setBookedDate [nm::Name] [[nm] ~ st.DayMouseStates.BookedDates] (md : option date) =
+			bd <- get st.DayMouseStates.BookedDates;
+			set st.DayMouseStates.BookedDates (seName[nm] bd md)
+
+		fun calWithDay x = withName[#Day] c.Date (read x)
+
+		fun setClicked ds b = 
+			ms <- get ds.MS;
+			set ds.MS (withName[#Clicked] ms b)
+
+		fun setClickedForDay x b = 
+			case (List.find(fn ds => ds.Date = (calWithDay x)) st.DayMouseStates) of
+					Some(ds) => 
+					setClicked ds b			
+				|	None => ()
+	in
+		List.mapX(
+			fn x => 
+				<xml>
+					<li
+						onclick = {
+							fn _ =>
+								let
+									val dateDayX = withName[#Day] c.Date (read x)
+								in
+									body
+								end
+								if nonEmpty x then
+									case filterClicked of 
+											[] => 
+												setBookedDate[#First] Some(calWithDay x)
+												setClickedForDay x true
+										|	ds::[] => 
+												if ds `bf` (dateDayX) || ds == dateDayX then
+													setBookedDate[#Second] Some(calWithDay x)
+												else ()
+										| ds1::ds2::[] =>
+												if 
+												setBookedDate[#Second] None
+												setBookedDate[#First] Some(calWithDay x)
+										| _ => ()
+								else ()
+						}
+						onmouseover={
+							fn _ =>
+								List.find
+						dynClass={Styles.days_item}>{[x]}
+					</li>
+				</xml>) xs
+	end
 
 fun skipDays c = 
 	let
@@ -165,7 +213,7 @@ fun calendarWidget st =
 							<dyn 
 								signal={
 									c <- signal st.Calendar;
-									return (listItems(List.append weekDays (List.append(skipDays c)(calendarDays(currentMonthDays c)))) st)}
+									return (listItems(List.append weekDays (List.append(skipDays c)(calDays(currentMonthDays c)))) c st)}
 							/>
 						</ul>
 					</li>
@@ -193,7 +241,7 @@ fun calendarWidget st =
 									let
 										val c' = nextCalMonth c
 									in
-										return (listItems(List.append weekDays (List.append(skipDays c')(calendarDays(currentMonthDays c')))) c'.Date.Month dss)
+										return (listItems(List.append weekDays (List.append(skipDays c')(calDays(currentMonthDays c')))) c' st)
 									end
 								}
 							/>
@@ -209,11 +257,11 @@ fun main () =
 	let
 		val lastDate = {Year = 2019, Month = 8, Day = 23}
 		val c = {CurrentYear = datetimeYear t, Date = {Year = datetimeYear t, Month = datetimeMonth t, Day = datetimeDay t}}
-		fun f c = 
+		fun boundedCalDays c = 
 			if c.Date.Year <= lastDate.Year && c.Date.Month <= lastDate.Month && c.Date.Day <= lastDate.Day then
-				calendarDays <<< currentMonthDays <| c
+				calDays <<< currentMonthDays <| c
 			else
-				calendarDays <<< currentMonthDays <| {CurrentYear = c.CurrentYear, Date = lastDate} 
+				calDays <<< currentMonthDays <| {CurrentYear = c.CurrentYear, Date = lastDate} 
 		fun maybeNextCalMonth c = 
 			if c.Date.Year <= lastDate.Year && c.Date.Month <= lastDate.Month && c.Date.Day <= lastDate.Day then
 				Some(nextCalMonth c)
@@ -229,7 +277,7 @@ fun main () =
 					List.map(
 						fn (d, m, y) => 
 							{MS = source {Over = false, Clicked = false}, Date = {Day = d, Month = m, Year = y}})
-						(List.foldl(fn c  acc => List.append(mapDayMonthYear c (f c), acc)) [] cs)}
+						(List.foldl(fn c  acc => List.append(mapDayMonthYear c (boundedCalDays c), acc)) [] cs)}
 		return
 			<xml>
 				<head>
