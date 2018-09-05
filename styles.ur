@@ -2,3 +2,6 @@ style calendar_container
 style month_container
 style days_item
 style days_container
+style day_over
+style day_clicked
+style day_inbetween

@@ -9,4 +9,5 @@ rewrite style Styles/* [-]
 $/list
 $/datetime
 styles
+dateOps
 main
