@@ -1,4 +1,4 @@
-type date = {Year: int, Month: int, Day: int}
+type date = {Day: int, Month: int, Year: int}
 
 fun bf (d1: date) (d2: date) = d1.Year < d2.Year || (d1.Year = d2.Year && d1.Month < d2.Month) || (d1.Year = d2.Year && d1.Month = d2.Month && d1.Day < d2.Day)
 

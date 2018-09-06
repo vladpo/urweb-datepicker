@@ -1,4 +1,5 @@
 open Styles
+open DateOps
 
 type calendar = {CurrentYear: int, Date: date}
 type months = list (int * string)
@@ -58,13 +59,13 @@ fun monthIndex i =
 fun mapName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (f: a -> a) : $([nm = a] ++ rest) =
 	(r -- nm) ++ {nm = f r.nm}
 
-fun withName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (x: a) : $([nm = a] ++ rest) = mapName[a][nm] r (fn _ => x)
+fun withName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (x: a) : $([nm = a] ++ rest) = mapName[nm] r (fn _ => x)
 
-fun updateYear (c: calendar) (f: int -> int) = mapName [date] [#Date] c (fn d => mapName [int] [#Year] d f)
+fun updateYear (c: calendar) (f: int -> int) = mapName [#Date] c (fn d => mapName [#Year] d f)
 fun prevCalYear (c: calendar) cy = updateYear c (fn y => if y - 1 < cy then cy else y - 1)
 fun nextCalYear (c: calendar) = updateYear c (fn y => y + 1)
 
-fun updateMonth (c: calendar) (f: int -> int) = mapName [date] c (fn d => mapName [int] [#Month] d f)
+fun updateMonth (c: calendar) (f: int -> int) = mapName [#Date] c (fn d => mapName [#Month] d f)
 
 fun updatePrevMonth (c: calendar) cy = 
 	let
@@ -91,18 +92,18 @@ fun currentMonth c = monthTime c 0
 fun nextMonth c = monthTime c 1
 fun twoMonths c = monthTime c 2 
 fun monthDays t1 t2 = diffInSeconds t1 t2 / (60*60*24) 
-fun currentMonthDays c = monthDays (currentMonth c) (nextMonth c)
+fun currentMonthDays (c: calendar): int = monthDays (currentMonth c) (nextMonth c)
 
-fun identity [a] x = x
+fun identity [a] (x: a) : a = x
 
 fun isEmpty s = strlenGe s 0
-fun nonEmpty s = not (isEmpty s 0)
+fun nonEmpty s = not (isEmpty s)
 
 fun fillWhile [a] [b] (init: b) (f: b -> option b) (g: b -> a) : list a =
 	let
 		fun fillWhile' next acc = 
 			case (f next) of
-				| Some nextNext => fillWhile' nextNext (g nextB :: acc)
+				| Some nextNext => fillWhile' nextNext (g next :: acc)
 				|	None => acc
 	in
 		fillWhile' init []
@@ -121,93 +122,93 @@ fun filli [a] n (f: int -> a) : list a =
 
 fun calDays days : list string = List.rev(filli days (fn i => show i))
 
-fun listItems xs c st = 
+fun listItems xs (c: calendar) (st: state) =
 	let
-		val filterClicked = 
+		val filterClickedM = 
 			List.filterM(
 				fn ds => 
-					ms <- signal ds.MS;
+					ms <- get ds.MS;
 					return ms.Clicked
 			) st.DayMouseStates
 		
-		fun setBookedDate [nm::Name] [[nm] ~ bookedDates] (md : option date) =
-			bd <- get st.DayMouseStates.BookedDates;
-			set st.DayMouseStates.BookedDates (seName[nm] bd md)
+		fun setBookedDate [nm::Name] (md : option date) : transaction unit =
+			bd <- get st.BookedDates;
+			set st.BookedDates (withName[nm] bd md)
 
-		fun setMouseState [nm::Name] [[nm] ~ mouseState] ds b = 
+		fun setMouseState [nm::Name] (ds: dayState) (b: bool) : transaction unit =
 			ms <- get ds.MS;
 			set ds.MS (withName[nm] ms b)
 
 		fun findDayState d = List.find(fn ds => ds.Date = d) st.DayMouseStates
 
-		fun setMouseStateForDate [nm::Name] [[nm] ~ mouseState] d b = 
+		fun setMouseStateForDate [nm::Name] d (b: bool) : transaction unit = 
 			case (findDayState d) of
-				|	Some ds => 
-					setMouseState [nm] ds b			
-				|	None => ()
+				|	Some ds => setMouseState [nm] ds b
+				|	None => return ()
 	in
 		List.mapX(
 			fn x => 
-				<xml>
-					<li
-						onclick = {
-							fn _ =>
-								let
-									val dateDayX = withName[#Day] c.Date (read x)
-								in
+				let
+					val dateDayX = withName[#Day] c.Date (Option.get 0 (read x))
+				in
+					<xml>
+						<li
+							onclick = {
+								fn _ =>		
 									if nonEmpty x then
+										filterClicked <- filterClickedM;
 										case filterClicked of 
 											|	[] => 
+													setMouseStateForDate [#Clicked] dateDayX True;
 													setBookedDate [#First] (Some dateDayX)
-													setMouseStateForDate [#Clicked] dateDayX true
 											|	ds::[] => 
 													if ds `bf` (dateDayX) || ds = dateDayX then
 														setBookedDate [#Second] (Some dateDayX)
-													else ()
+													else return ()
 											| ds1::ds2::[] =>
 													if dateDayX `bf` ds1 || ds1 `bf` dateDayX then
-														setMouseState [#Clicked] ds1 false
-														setMouseStateForDate [#Clicked] dateDayX true
+														setMouseState [#Clicked] ds1 False;
+														setMouseStateForDate [#Clicked] dateDayX True;
 														setBookedDate [#First] (Some dateDayX)
 													else if ds2 = dateDayX || ds2 `bf` dateDayX then
-														setMouseState [#Clicked] ds1 false
-														setMouseState [#Clicked] ds2 false
-														setMouseStateForDate [#Clicked] dateDayX true
-														setBookedDate [#First] (Some dateDayX)
+														setMouseState [#Clicked] ds1 False;
+														setMouseState [#Clicked] ds2 False;
+														setMouseStateForDate [#Clicked] dateDayX True;
+														setBookedDate [#First] (Some dateDayX);
 														setBookedDate [#Second] None
-													else ()
-											| _ => ()
-									else ()
-								end
-						}
-						onmouseover = {
-							fn _ =>
-								List.app(fn ds => setMouseState [#Over] ds false) st.DayMouseStates
-								setMouseStateForDate [#Over] dateDayX true
-						}
-						dynClass = {
-							case (findDayState dateDayX) of
-								|	Some ds =>
-										ms <- signal ds.MS;
-										bd <- signal st.BookedDates;
-										return 
-											(if ms.Over && (not ms.Clicked) then
-												if dateDayX `between` (bd.First, bd.Last) then
-													classes Styles.days_item (classes Styles.day_over Styles.day_inbetween)
+													else return ()
+											| _ => return ()
+									else return ()
+							}
+							onmouseover = {
+								fn _ =>
+									List.app(fn ds => setMouseState [#Over] ds False) st.DayMouseStates;
+									setMouseStateForDate [#Over] dateDayX True
+							}
+							dynClass = {
+								case (findDayState dateDayX) of
+									|	Some ds =>
+											ms <- signal ds.MS;
+											bd <- signal st.BookedDates;
+											return 
+												(if ms.Over && (not ms.Clicked) then
+													if dateDayX `between` (bd.First, bd.Last) then
+														classes Styles.days_item (classes Styles.day_over Styles.day_inbetween)
+													else 
+														classes Styles.days_item Styles.day_over
+												else if dateDayX `between` (bd.First, bd.Last) then
+													classes Styles.days_item Styles.day_inbetween
+												else if ms.Clicked then
+													classes Styles.days_item Styles.day_clicked
 												else 
-													classes Styles.days_item Styles.day_over
-											else if dateDayX `between` (bd.First, bd.Last) then
-												classes Styles.days_item Styles.day_inbetween
-											else if ms.Clicked then
-												classes Styles.days_item Styles.day_clicked
-											else 
-												Styles.days_item)
-								| None => return Styles.days_item
-						}
-					>
-						{[x]}
-					</li>
-				</xml>) xs
+													Styles.days_item)
+									| None => return Styles.days_item
+							}
+						>
+							{[x]}
+						</li>
+					</xml>
+				end) xs
 	end
 
 fun skipDays c = 
@@ -219,7 +220,7 @@ fun skipDays c =
 		filli k (fn _ => "")
 	end
 
-fun calendarWidget st = 
+fun calendarWidget (st: state) = 
 		<xml>
 		{calendarMenu 
 			(fn c (a: action) => 
@@ -283,35 +284,47 @@ fun calendarWidget st =
 
 fun main () = 
 	let
-		val lastDate: date = {Year = 2019, Month = 8, Day = 23}
+		val lastDate: date = {Day = 23, Month = 8, Year = 2019}
 		
-		val boundedCalDays =
-			fn c =>
-				if c.Date `bf` lastDate then
-					calDays <<< currentMonthDays <| c
-				else
-					calDays <<< currentMonthDays <| (withName[#Date] c lastDate)
+		val boundedCalDays: calendar -> list string =
+			fn (c: calendar) =>
+				let
+					val cmd: int = currentMonthDays c
+					val c': calendar = withName[#Date] c lastDate
+					val cmd': int = currentMonthDays c'
+					val cds: list string = calDays cmd
+					val cds': list string = calDays cmd'
+				in
+					if c.Date `bf` lastDate then
+						cds
+					else
+						cds'
+				end
 		
-		val cs: list calendar = fillWhile c (fn c => if DateOps.bf(c.Date, lastDate) then Some(nextCalMonth c) else None) (fn c => c)
+		fun calendars c : list calendar = fillWhile c (fn c => if c.Date `bf` lastDate then Some(nextCalMonth c) else None) identity
 		
-		fun mapDayMonthYear c = map(fn d => (d, c.Date.Month, c.Date.Year))
+		fun mapDayMonthYear c = List.mp(fn d => (d, c.Date.Month, c.Date.Year))
 
-		fun initState c : state = 
-			{	Calendar = source c, BookedDates = source {First = None, Last = None},
-				DayMouseStates = 
-					map(
-						fn dmy => {MS = source {Over = false, Clicked = false}, Date = {Day = dmy.1, Month = dmy.2, Year = dmy.3}}
-					) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c)) acc) [] cs)
-			}
+		val initState : transaction state = 
+			t <- now;
+			sc <- source {CurrentYear = datetimeYear t, Date = {Day = datetimeDay t, Month = datetimeMonth t, Year = datetimeYear t}};
+			c <- get sc;
+			sbd <- source {First = None, Last = None};
+			dmss <- List.mapM(
+								fn dmy => 
+									sms <- source {Over = False, Clicked = False};
+									return {MS = sms, Date = {Day = (Option.get 0 (read (dmy.1))), Month = dmy.2, Year = dmy.3}}
+							) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c)) acc) [] (calendars c));
+			return {Calendar = sc, BookedDates = sbd, DayMouseStates = dmss}
 	in
-		t <- now;
+		inits <- initState;
 		return
 			<xml>
 				<head>
 					<link rel="stylesheet" href="/styles.css"/>
 				</head>
 				<body>
-					{calendarWidget (initState {CurrentYear = datetimeYear t, Date = {Year = datetimeYear t, Month = datetimeMonth t, Day = datetimeDay t}})}
+					{calendarWidget inits}
 				</body>
 			</xml>
 	end
