@@ -131,19 +131,32 @@ fun listItems xs (c: calendar) (st: state) =
 					return ms.Clicked
 			) st.DayMouseStates
 		
-		fun setBookedDate [nm::Name] (md : option date) : transaction unit =
+		fun setFirstBookedDate (md : option date) : transaction unit =
 			bd <- get st.BookedDates;
-			set st.BookedDates (withName[nm] bd md)
+			set st.BookedDates (withName[#First] bd md)
 
-		fun setMouseState [nm::Name] (ds: dayState) (b: bool) : transaction unit =
-			(ms: mouseState) <- get ds.MS;
-			set ds.MS (withName[nm] ms b)
+		fun setLastBookedDate (md : option date) : transaction unit =
+			bd <- get st.BookedDates;
+			set st.BookedDates (withName[#Last] bd md)
 
 		fun findDayState d = List.find(fn ds => ds.Date = d) st.DayMouseStates
 
-		fun setMouseStateForDate [nm::Name] d (b: bool) : transaction unit = 
+		fun setOverMouseState (ds: dayState) (b: bool) : transaction unit =
+			(ms: mouseState) <- get ds.MS;
+			set ds.MS (withName[#Over] ms b)
+
+		fun setOverMouseStateForDate d (b: bool) : transaction unit = 
 			case (findDayState d) of
-				|	Some ds => setMouseState [nm] ds b
+				|	Some ds => setOverMouseState ds b
+				|	None => return ()
+
+		fun setClickedMouseState (ds: dayState) (b: bool) : transaction unit =
+			(ms: mouseState) <- get ds.MS;
+			set ds.MS (withName[#Clicked] ms b)
+
+		fun setClickedMouseStateForDate d (b: bool) : transaction unit = 
+			case (findDayState d) of
+				|	Some ds => setClickedMouseState ds b
 				|	None => return ()
 	in
 		List.mapX(
@@ -159,31 +172,31 @@ fun listItems xs (c: calendar) (st: state) =
 										(filterClicked: list dayState) <- filterClickedM;
 										case filterClicked of 
 											|	[] => 
-													setMouseStateForDate [#Clicked] dateDayX True;
-													setBookedDate [#First] (Some dateDayX)
+													setClickedMouseStateForDate dateDayX True;
+													setFirstBookedDate (Some dateDayX)
 											|	ds::[] => 
 													if ds.Date `bf` (dateDayX) || ds.Date = dateDayX then
-														setBookedDate [#Second] (Some dateDayX)
+														setLastBookedDate (Some dateDayX)
 													else return ()
 											| ds1::ds2::[] =>
 													if dateDayX `bf` ds1.Date || ds1.Date `bf` dateDayX then
-														setMouseState [#Clicked] ds1 False;
-														setMouseStateForDate [#Clicked] dateDayX True;
-														setBookedDate [#First] (Some dateDayX)
+														setClickedMouseState ds1 False;
+														setClickedMouseStateForDate dateDayX True;
+														setFirstBookedDate (Some dateDayX)
 													else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
-														setMouseState [#Clicked] ds1 False;
-														setMouseState [#Clicked] ds2 False;
-														setMouseStateForDate [#Clicked] dateDayX True;
-														setBookedDate [#First] (Some dateDayX);
-														setBookedDate [#Second] None
+														setClickedMouseState ds1 False;
+														setClickedMouseState ds2 False;
+														setClickedMouseStateForDate dateDayX True;
+														setFirstBookedDate (Some dateDayX);
+														setLastBookedDate None
 													else return ()
 											| _ => return ()
 									else return ()
 							}
 							onmouseover = {
 								fn _ =>
-									List.app(fn ds => setMouseState [#Over] ds False) st.DayMouseStates;
-									setMouseStateForDate [#Over] dateDayX True
+									List.app(fn ds => setOverMouseState ds False) st.DayMouseStates;
+									setOverMouseStateForDate dateDayX True
 							}
 							dynClass = {
 								case (findDayState dateDayX) of
@@ -307,15 +320,18 @@ fun main () =
 
 		val initState : transaction state = 
 			t <- now;
-			sc <- source {CurrentYear = datetimeYear t, Date = {Day = datetimeDay t, Month = datetimeMonth t, Year = datetimeYear t}};
-			c <- get sc;
-			sbd <- source {First = None, Last = None};
-			dmss <- List.mapM(
-								fn dmy => 
-									sms <- source {Over = False, Clicked = False};
-									return {MS = sms, Date = {Day = (Option.get 0 (read (dmy.1))), Month = dmy.2, Year = dmy.3}}
-							) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c)) acc) [] (calendars c));
-			return {Calendar = sc, BookedDates = sbd, DayMouseStates = dmss}
+			let
+				val c = {CurrentYear = datetimeYear t, Date = {Day = datetimeDay t, Month = datetimeMonth t, Year = datetimeYear t}}
+			in
+				sc <- source c;
+				sbd <- source {First = None, Last = None};
+				dmss <- List.mapM(
+									fn dmy => 
+										sms <- source {Over = False, Clicked = False};
+										return {MS = sms, Date = {Day = (Option.get 0 (read (dmy.1))), Month = dmy.2, Year = dmy.3}}
+								) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c)) acc) [] (calendars c));
+				return {Calendar = sc, BookedDates = sbd, DayMouseStates = dmss}
+			end
 	in
 		inits <- initState;
 		return
