@@ -124,7 +124,7 @@ fun calDays days : list string = List.rev(filli days (fn i => show i))
 
 fun listItems xs (c: calendar) (st: state) =
 	let
-		val filterClickedM = 
+		val filterClickedM: transaction (list dayState) = 
 			List.filterM(
 				fn ds => 
 					ms <- get ds.MS;
@@ -136,7 +136,7 @@ fun listItems xs (c: calendar) (st: state) =
 			set st.BookedDates (withName[nm] bd md)
 
 		fun setMouseState [nm::Name] (ds: dayState) (b: bool) : transaction unit =
-			ms <- get ds.MS;
+			(ms: mouseState) <- get ds.MS;
 			set ds.MS (withName[nm] ms b)
 
 		fun findDayState d = List.find(fn ds => ds.Date = d) st.DayMouseStates
@@ -149,28 +149,28 @@ fun listItems xs (c: calendar) (st: state) =
 		List.mapX(
 			fn x => 
 				let
-					val dateDayX = withName[#Day] c.Date (Option.get 0 (read x))
+					val dateDayX: date = withName[#Day] c.Date (Option.get 0 (read x))
 				in
 					<xml>
 						<li
 							onclick = {
 								fn _ =>		
 									if nonEmpty x then
-										filterClicked <- filterClickedM;
+										(filterClicked: list dayState) <- filterClickedM;
 										case filterClicked of 
 											|	[] => 
 													setMouseStateForDate [#Clicked] dateDayX True;
 													setBookedDate [#First] (Some dateDayX)
 											|	ds::[] => 
-													if ds `bf` (dateDayX) || ds = dateDayX then
+													if ds.Date `bf` (dateDayX) || ds.Date = dateDayX then
 														setBookedDate [#Second] (Some dateDayX)
 													else return ()
 											| ds1::ds2::[] =>
-													if dateDayX `bf` ds1 || ds1 `bf` dateDayX then
+													if dateDayX `bf` ds1.Date || ds1.Date `bf` dateDayX then
 														setMouseState [#Clicked] ds1 False;
 														setMouseStateForDate [#Clicked] dateDayX True;
 														setBookedDate [#First] (Some dateDayX)
-													else if ds2 = dateDayX || ds2 `bf` dateDayX then
+													else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
 														setMouseState [#Clicked] ds1 False;
 														setMouseState [#Clicked] ds2 False;
 														setMouseStateForDate [#Clicked] dateDayX True;
@@ -192,11 +192,11 @@ fun listItems xs (c: calendar) (st: state) =
 											bd <- signal st.BookedDates;
 											return 
 												(if ms.Over && (not ms.Clicked) then
-													if dateDayX `between` (bd.First, bd.Last) then
+													if dateDayX `af` (Option.get dateDayX bd.First) then
 														classes Styles.days_item (classes Styles.day_over Styles.day_inbetween)
 													else 
 														classes Styles.days_item Styles.day_over
-												else if dateDayX `between` (bd.First, bd.Last) then
+												else if dateDayX `af` (Option.get dateDayX bd.First) then
 													classes Styles.days_item Styles.day_inbetween
 												else if ms.Clicked then
 													classes Styles.days_item Styles.day_clicked
