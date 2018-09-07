@@ -6,7 +6,7 @@ type months = list (int * string)
 datatype action = Prev | Next
 type mouseState = {Over: bool, Clicked: bool}
 type dayState = {MS: source mouseState, Date: date}
-type bookedDates = {First: option date, Last: option date, Over: option date}
+type bookedDates = {First: option date, Last: option date, PrevLast: option date, Over: option date}
 type state = {Calendar: source calendar, BookedDates: source bookedDates, DayMouseStates: list dayState}
 
 val allMonths: months = 
@@ -141,6 +141,10 @@ fun listItems xs (c: calendar) (st: state) =
 			bd <- get st.BookedDates;
 			set st.BookedDates (withName[#Last] bd md)
 
+		fun setPrevLastBookedDate (md : option date) : transaction unit =
+			bd <- get st.BookedDates;
+			set st.BookedDates (withName[#PrevLast] bd md)
+
 		fun setOverBookedDate (md : option date) : transaction unit =
 			bd <- get st.BookedDates;
 			set st.BookedDates (withName[#Over] bd md)
@@ -186,9 +190,13 @@ fun listItems xs (c: calendar) (st: state) =
 														setLastBookedDate (Some dateDayX)
 													else return ()
 											| ds1::ds2::[] =>
-													if dateDayX `bf` ds1.Date || ds1.Date `bf` dateDayX then
+													if dateDayX `bf` ds1.Date || dateDayX `bf` ds2.Date then
 														setClickedMouseState ds1 False;
 														setClickedMouseStateForDate dateDayX True;
+														bd <- get st.BookedDates;
+														setPrevLastBookedDate bd.Last;
+														setLastBookedDate None;
+														setClickedMouseState ds2 False;
 														setFirstBookedDate (Some dateDayX)
 													else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
 														setClickedMouseState ds1 False;
@@ -222,9 +230,15 @@ fun listItems xs (c: calendar) (st: state) =
 												(List.foldl
 													(fn (c, b) cs => if b then classes cs c else cs)
 												 	Styles.days_item
-													((Styles.day_over, ms.Over || ((Option.isNone bd.Last) && dateDayX `af` (Option.get dateDayX bd.First) && (Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.Over))))::
+													((Styles.day_over, 
+														ms.Over || 
+														((Option.isNone bd.Last) && 
+															dateDayX `af` (Option.get dateDayX bd.First) && 
+															(Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.Over))))::
 													 (Styles.day_clicked, ms.Clicked)::
-													 (Styles.day_inbetween, (Option.get False (Option.mp(fn d => d `bf` dateDayX) bd.First)) && (Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.Last)))::[]
+													 (Styles.day_inbetween, 
+													 (Option.get False (Option.mp(fn d => d `bf` dateDayX) bd.First)) && 
+													 (Option.get (Option.get False (Option.mp(fn d => dateDayX `bfEq` d) bd.PrevLast)) (Option.mp(fn d => dateDayX `bfEq` d) bd.Last)))::[]
 												 	)
 												)
 									| None => return Styles.days_item
@@ -336,7 +350,7 @@ fun main () =
 				val c = {CurrentYear = datetimeYear t, Date = {Day = datetimeDay t, Month = datetimeMonth t, Year = datetimeYear t}}
 			in
 				sc <- source c;
-				sbd <- source {First = None, Last = None, Over = None};
+				sbd <- source {First = None, Last = None, PrevLast = None, Over = None};
 				dmss <- List.mapM(
 									fn dmy => 
 										sms <- source {Over = False, Clicked = False};
