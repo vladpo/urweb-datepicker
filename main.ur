@@ -234,7 +234,10 @@ fun listItems xs (c: calendar) (st: state) =
 														ms.Over || 
 														((Option.isNone bd.Last) && 
 															dateDayX `af` (Option.get dateDayX bd.First) && 
-															(Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.Over))))::
+															(Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.Over))) ||
+														(Option.isSome bd.Last &&
+														 Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.First) &&
+														 Option.get False (Option.mp(fn d => d `bfEq` dateDayX) bd.Over)))::
 													 (Styles.day_clicked, ms.Clicked)::
 													 (Styles.day_inbetween, 
 													 (Option.get False (Option.mp(fn d => d `bf` dateDayX) bd.First)) && 

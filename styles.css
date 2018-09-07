@@ -1,5 +1,5 @@
 .calendar-container {
-	width: 680px;
+	width: 740px;
 	padding: 0;
 	margin: 0;
 	list-style: none;
@@ -28,7 +28,7 @@
 }
 
 .days-container>span {
-	width: 300px;
+	width: 330px;
 	padding: 0;
   margin: 0;
   list-style: none;
@@ -48,20 +48,17 @@
   font-weight: 700;
   font-size: 15px;
   text-align: center;
+  border: 2px solid rgb(255, 255, 255);
+  border-radius: 7px;
+  padding: 0px;
 }
 
 .day-over {
 	background: rgb(204, 248, 235);
   color: rgb(255, 255, 255);
-  border: 2px solid rgb(255, 255, 255);
-  border-radius: 7px;
-  padding: 0px;
 }
 
 .day-clicked, .day-inbetween {
 	background: rgb(0, 132, 137);
   color: rgb(255, 255, 255);
-  border: 2px solid rgb(255, 255, 255);
-  border-radius: 7px;
-  padding: 0px;
 }
