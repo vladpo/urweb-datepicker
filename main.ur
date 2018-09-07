@@ -211,6 +211,7 @@ fun listItems xs (c: calendar) (st: state) =
 							
 							onmouseover = {
 								fn _ =>
+									stopPropagation;
 									setOverBookedDate (Some dateDayX);
 									setOverMouseStateForDate dateDayX True
 							}
@@ -231,10 +232,10 @@ fun listItems xs (c: calendar) (st: state) =
 													(fn (c, b) cs => if b then classes cs c else cs)
 												 	Styles.days_item
 													((Styles.day_over, 
-														ms.Over || 
+														(ms.Over && (Option.isNone bd.First || Option.get False (Option.mp(fn d => d `bf` dateDayX) bd.PrevLast))) || 
 														((Option.isNone bd.Last) && 
 															dateDayX `af` (Option.get dateDayX bd.First) && 
-															(Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.Over))) ||
+															(Option.get False (Option.mp(fn d => dateDayX `bfEq` d) bd.Over))) ||
 														(Option.isSome bd.Last &&
 														 Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.First) &&
 														 Option.get False (Option.mp(fn d => d `bfEq` dateDayX) bd.Over)))::
