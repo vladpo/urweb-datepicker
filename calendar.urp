@@ -8,6 +8,7 @@ rewrite style Styles/* [-]
 
 $/list
 $/option
+$/string
 $/datetime
 styles
 dateOps

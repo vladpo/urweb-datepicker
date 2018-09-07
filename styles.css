@@ -49,3 +49,19 @@
   font-size: 15px;
   text-align: center;
 }
+
+.day-over {
+	background: rgb(204, 248, 235);
+  color: rgb(255, 255, 255);
+  border: 2px solid rgb(255, 255, 255);
+  border-radius: 7px;
+  padding: 0px;
+}
+
+.day-clicked, .day-inbetween {
+	background: rgb(0, 132, 137);
+  color: rgb(255, 255, 255);
+  border: 2px solid rgb(255, 255, 255);
+  border-radius: 7px;
+  padding: 0px;
+}
