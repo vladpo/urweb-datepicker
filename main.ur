@@ -1,5 +1,6 @@
 open Styles
 open DateOps
+open OptOps
 
 type calendar = {CurrentYear: int, Date: date}
 type months = list (int * string)
@@ -58,10 +59,12 @@ fun monthIndex i =
 	else 
 		mod (neg i) 12
 
-fun mapName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (f: a -> a) : $([nm = a] ++ rest) =
+fun mapName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] 
+			(r: $([nm = a] ++ rest)) (f: a -> a) : $([nm = a] ++ rest) =
 	(r -- nm) ++ {nm = f r.nm}
 
-fun withName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] (r: $([nm = a] ++ rest)) (x: a) : $([nm = a] ++ rest) = mapName[nm] r (fn _ => x)
+fun withName [a] [nm:: Name] [rest::: {Type}] [[nm] ~ rest] 
+			 (r: $([nm = a] ++ rest)) (x: a) : $([nm = a] ++ rest) = mapName[nm] r (fn _ => x)
 
 fun updateYear (c: calendar) (f: int -> int) = mapName [#Date] c (fn d => mapName [#Year] d f)
 fun prevCalYear (c: calendar) cy = updateYear c (fn y => if y - 1 < cy then cy else y - 1)
@@ -89,7 +92,8 @@ fun nextCalMonth (c: calendar) =
 			c'
 	end
 
-fun monthTime c i = fromDatetime (c.Date.Year + ((c.Date.Month + i) / 12)) ((c.Date.Month + i) % 12) 1 0 0 0
+fun monthTime c i = 
+	fromDatetime (c.Date.Year + ((c.Date.Month + i) / 12)) ((c.Date.Month + i) % 12) 1 0 0 0
 fun currentMonth c = monthTime c 0
 fun nextMonth c = monthTime c 1
 fun twoMonths c = monthTime c 2 
@@ -97,6 +101,7 @@ fun monthDays t1 t2 = diffInSeconds t1 t2 / (60*60*24)
 fun currentMonthDays (c: calendar): int = monthDays (currentMonth c) (nextMonth c)
 
 fun identity [a] (x: a) : a = x
+fun swap [a] [b] (f: a -> a -> b) = fn x y => f y x
 
 fun isEmpty s = String.length s = 0
 fun nonEmpty s = not (isEmpty s)
@@ -168,6 +173,26 @@ fun listItems xs (c: calendar) (st: state) =
 			case (findDayState d) of
 				|	Some ds => setClickedMouseState ds b
 				|	None => return ()
+
+		fun dynStyles dateDayX =
+			case (findDayState dateDayX) of
+			|	Some ds =>
+					ms <- signal ds.MS;
+					bd <- signal st.BookedDates;
+					return
+						(List.foldl
+							(fn (c, b) cs => if b then classes cs c else cs)
+						 	Styles.days_item
+							((Styles.day_over, 
+								ms.Over || 
+								(isNone bd.Last && bd.First `mbf` dateDayX && dateDayX `bfEqm` bd.Over) ||
+								(isSome bd.Last && dateDayX `bfm` bd.First && bd.Over `mbfEq` dateDayX)
+							 )::
+							 (Styles.day_clicked, ms.Clicked)::
+							 (Styles.day_inbetween, bd.First `mbf` dateDayX && (dateDayX `bfEqmOr` bd.Last)(dateDayX `bfEqm` bd.PrevLast))::[]
+						 	)
+						)
+			| None => return Styles.days_item
 	in
 		List.mapX(
 			fn x => 
@@ -178,6 +203,7 @@ fun listItems xs (c: calendar) (st: state) =
 						<li
 							onclick = {
 								fn _ =>
+									bd <- get st.BookedDates;
 									if nonEmpty x then
 										(filterClicked: list dayState) <- filterClickedM;
 										case filterClicked of 
@@ -185,15 +211,27 @@ fun listItems xs (c: calendar) (st: state) =
 													setClickedMouseStateForDate dateDayX True;
 													setFirstBookedDate (Some dateDayX)
 											|	ds::[] => 
-													if ds.Date `bf` dateDayX || ds.Date = dateDayX then
+													if isNone bd.Last && (ds.Date `bf` dateDayX || ds.Date = dateDayX) then
 														setClickedMouseStateForDate dateDayX True;
+														setPrevLastBookedDate None;
 														setLastBookedDate (Some dateDayX)
+													else if dateDayX `bf` ds.Date then
+														setClickedMouseState ds False;
+														setClickedMouseStateForDate dateDayX True;
+														setFirstBookedDate (Some dateDayX);
+														setLastBookedDate None;
+														setPrevLastBookedDate None
+													else if isSome bd.First && isSome bd.Last && bd.Last `mbfEq` dateDayX then
+														setClickedMouseState ds False;
+														setClickedMouseStateForDate dateDayX True;
+														setFirstBookedDate (Some dateDayX);
+														setPrevLastBookedDate None;
+														setLastBookedDate None
 													else return ()
 											| ds1::ds2::[] =>
 													if dateDayX `bf` ds1.Date || dateDayX `bf` ds2.Date then
 														setClickedMouseState ds1 False;
 														setClickedMouseStateForDate dateDayX True;
-														bd <- get st.BookedDates;
 														setPrevLastBookedDate bd.Last;
 														setLastBookedDate None;
 														setClickedMouseState ds2 False;
@@ -203,6 +241,7 @@ fun listItems xs (c: calendar) (st: state) =
 														setClickedMouseState ds2 False;
 														setClickedMouseStateForDate dateDayX True;
 														setFirstBookedDate (Some dateDayX);
+														setPrevLastBookedDate None;
 														setLastBookedDate None
 													else return ()
 											| _ => return ()
@@ -222,31 +261,7 @@ fun listItems xs (c: calendar) (st: state) =
 									List.app(fn ds => setOverMouseState ds False) st.DayMouseStates
 							}
 							
-							dynClass = {
-								case (findDayState dateDayX) of
-									|	Some ds =>
-											ms <- signal ds.MS;
-											bd <- signal st.BookedDates;
-											return
-												(List.foldl
-													(fn (c, b) cs => if b then classes cs c else cs)
-												 	Styles.days_item
-													((Styles.day_over, 
-														(ms.Over && (Option.isNone bd.First || Option.get False (Option.mp(fn d => d `bf` dateDayX) bd.PrevLast))) || 
-														((Option.isNone bd.Last) && 
-															dateDayX `af` (Option.get dateDayX bd.First) && 
-															(Option.get False (Option.mp(fn d => dateDayX `bfEq` d) bd.Over))) ||
-														(Option.isSome bd.Last &&
-														 Option.get False (Option.mp(fn d => dateDayX `bf` d) bd.First) &&
-														 Option.get False (Option.mp(fn d => d `bfEq` dateDayX) bd.Over)))::
-													 (Styles.day_clicked, ms.Clicked)::
-													 (Styles.day_inbetween, 
-													 (Option.get False (Option.mp(fn d => d `bf` dateDayX) bd.First)) && 
-													 (Option.get (Option.get False (Option.mp(fn d => dateDayX `bfEq` d) bd.PrevLast)) (Option.mp(fn d => dateDayX `bfEq` d) bd.Last)))::[]
-												 	)
-												)
-									| None => return Styles.days_item
-							}
+							dynClass = { dynStyles dateDayX}
 						>
 							{[x]}
 						</li>
