@@ -23,3 +23,5 @@ fun mbfEq(md1: option date)(d2: date): bool = mpOr (fn d => bfEq d d2) md1 False
 fun bfEqm(d1: date)(md2: option date): bool = mpOr (fn d => bfEq d1 d) md2 False
 
 fun bfEqmOr(d1: date)(md2: option date): bool -> bool = fn b => mpOr (fn d => bfEq d1 d) md2 b
+
+fun betweenm(d1: date)((md2: option date), (md3: option date)): bool = mpOr(fn d2 => mpOr(fn d3 => between d1 (d2, d3)) md3 False) md2 False

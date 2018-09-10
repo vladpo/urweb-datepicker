@@ -5,7 +5,7 @@ open OptOps
 type calendar = {CurrentYear: int, Date: date}
 type months = list (int * string)
 datatype action = Prev | Next
-type mouseState = {Over: bool, Clicked: bool}
+type mouseState = {Over: bool, Clicked: bool, ClickedOut: bool}
 type dayState = {MS: source mouseState, Date: date}
 type bookedDates = {First: option date, Last: option date, PrevLast: option date, Over: option date}
 type state = {Calendar: source calendar, BookedDates: source bookedDates, DayMouseStates: list dayState}
@@ -137,62 +137,55 @@ fun listItems xs (c: calendar) (st: state) =
 					ms <- get ds.MS;
 					return ms.Clicked
 			) st.DayMouseStates
-		
-		fun setFirstBookedDate (md : option date) : transaction unit =
-			bd <- get st.BookedDates;
-			set st.BookedDates (withName[#First] bd md)
 
-		fun setLastBookedDate (md : option date) : transaction unit =
+		fun bdWithFirst (md: option date) = fn bd => withName[#First] bd md
+		fun bdWithLast (md: option date) = fn bd => withName[#Last] bd md
+		fun bdWithPrevLast (md: option date) = fn bd => withName[#PrevLast] bd md
+		fun bdWithOver (md: option date) = fn bd => withName[#Over] bd md
+		fun setBookedDates (f: bookedDates -> bookedDates) = 
 			bd <- get st.BookedDates;
-			set st.BookedDates (withName[#Last] bd md)
-
-		fun setPrevLastBookedDate (md : option date) : transaction unit =
-			bd <- get st.BookedDates;
-			set st.BookedDates (withName[#PrevLast] bd md)
-
-		fun setOverBookedDate (md : option date) : transaction unit =
-			bd <- get st.BookedDates;
-			set st.BookedDates (withName[#Over] bd md)
+			set st.BookedDates (f bd)
 
 		fun findDayState d = List.find(fn ds => ds.Date = d) st.DayMouseStates
 
-		fun setOverMouseState (ds: dayState) (b: bool) : transaction unit =
-			(ms: mouseState) <- get ds.MS;
-			set ds.MS (withName[#Over] ms b)
-
-		fun setOverMouseStateForDate d (b: bool) : transaction unit = 
+		fun msWithOver b = fn ms => withName[#Over] ms b
+		fun msWithClicked b = fn ms => withName[#Clicked] ms b
+		fun msWithClickedOut b = fn ms => withName[#ClickedOut] ms b
+		fun setMouseState(ds: dayState)(f: mouseState -> mouseState) =
+			ms <- get ds.MS;
+			set ds.MS (f ms)
+		fun setMouseStateForDate(d: date)(f: mouseState -> mouseState) = 
 			case (findDayState d) of
-				|	Some ds => setOverMouseState ds b
-				|	None => return ()
+				|	Some ds => setMouseState ds f
+				| None => return ()
 
-		fun setClickedMouseState (ds: dayState) (b: bool) : transaction unit =
-			(ms: mouseState) <- get ds.MS;
-			set ds.MS (withName[#Clicked] ms b)
-
-		fun setClickedMouseStateForDate d (b: bool) : transaction unit = 
-			case (findDayState d) of
-				|	Some ds => setClickedMouseState ds b
-				|	None => return ()
+		val findClickedOutM: transaction (option dayState) = 
+			List.findM(
+				fn ds => 
+					ms <- get ds.MS;
+					return (not ms.ClickedOut)
+			) st.DayMouseStates
 
 		fun dynStyles dateDayX =
-			case (findDayState dateDayX) of
-			|	Some ds =>
-					ms <- signal ds.MS;
-					bd <- signal st.BookedDates;
-					return
-						(List.foldl
-							(fn (c, b) cs => if b then classes cs c else cs)
-						 	Styles.days_item
-							((Styles.day_over, 
-								ms.Over || 
-								(isNone bd.Last && bd.First `mbf` dateDayX && dateDayX `bfEqm` bd.Over) ||
-								(isSome bd.Last && dateDayX `bfm` bd.First && bd.Over `mbfEq` dateDayX)
-							 )::
-							 (Styles.day_clicked, ms.Clicked)::
-							 (Styles.day_inbetween, bd.First `mbf` dateDayX && (dateDayX `bfEqmOr` bd.Last)(dateDayX `bfEqm` bd.PrevLast))::[]
-						 	)
-						)
-			| None => return Styles.days_item
+			mco <- findClickedOutM;
+			return
+				case (findDayState dateDayX) of
+					|	Some ds =>
+							ms <- signal ds.MS;
+							bd <- signal st.BookedDates;
+							let
+								val cs = 
+									(Styles.day_over, ms.Over || (isNone bd.Last && bd.First `mbf` dateDayX && dateDayX `bfEqm` bd.Over) ||
+																		(isSome bd.Last && dateDayX `bfm` bd.First && bd.Over `mbfEq` dateDayX))::
+									(Styles.day_clicked, ms.Clicked)::
+									(Styles.day_inbetween, bd.First `mbf` dateDayX && (dateDayX `bfEqmOr` bd.Last)(dateDayX `bfEqm` bd.PrevLast))::[]
+							in
+								List.foldl(fn (c, b) cs => if b then classes cs c else cs) Styles.days_item
+									case mco of
+										| Some True => (Styles.day_fade, bd.First `mbfEq` dateDayX && dateDayX `bfm` bd.Over && dateDayX `bfEqm` bd.Last)::cs
+										| _ => cs
+							end
+					| None => Styles.days_item
 	in
 		List.mapX(
 			fn x => 
@@ -208,41 +201,32 @@ fun listItems xs (c: calendar) (st: state) =
 										(filterClicked: list dayState) <- filterClickedM;
 										case filterClicked of 
 											|	[] => 
-													setClickedMouseStateForDate dateDayX True;
-													setFirstBookedDate (Some dateDayX)
+													setMouseStateForDate dateDayX (msWithClicked True);
+													setBookedDates(bdWithFirst (Some dateDayX))
 											|	ds::[] => 
 													if isNone bd.Last && (ds.Date `bf` dateDayX || ds.Date = dateDayX) then
-														setClickedMouseStateForDate dateDayX True;
-														setPrevLastBookedDate None;
-														setLastBookedDate (Some dateDayX)
+														setMouseStateForDate dateDayX ((msWithClickedOut False) <<< (msWithClicked True));
+														setBookedDates((bdWithPrevLast None) <<< (bdWithLast(Some dateDayX)))
 													else if dateDayX `bf` ds.Date then
-														setClickedMouseState ds False;
-														setClickedMouseStateForDate dateDayX True;
-														setFirstBookedDate (Some dateDayX);
-														setLastBookedDate None;
-														setPrevLastBookedDate None
+														setMouseState ds (msWithClicked False);
+														setMouseStateForDate dateDayX (msWithClicked True);
+														setBookedDates(bdWithFirst(Some dateDayX) <<< (bdWithLast None) <<< (bdWithPrevLast None))
 													else if isSome bd.First && isSome bd.Last && bd.Last `mbfEq` dateDayX then
-														setClickedMouseState ds False;
-														setClickedMouseStateForDate dateDayX True;
-														setFirstBookedDate (Some dateDayX);
-														setPrevLastBookedDate None;
-														setLastBookedDate None
+														setMouseState ds (msWithClicked False);
+														setMouseStateForDate dateDayX (msWithClicked True);
+														setBookedDates(bdWithFirst(Some dateDayX) <<< (bdWithPrevLast None) <<< (bdWithLast None))
 													else return ()
 											| ds1::ds2::[] =>
 													if dateDayX `bf` ds1.Date || dateDayX `bf` ds2.Date then
-														setClickedMouseState ds1 False;
-														setClickedMouseStateForDate dateDayX True;
-														setPrevLastBookedDate bd.Last;
-														setLastBookedDate None;
-														setClickedMouseState ds2 False;
-														setFirstBookedDate (Some dateDayX)
+														setMouseState ds1 (msWithClicked False);
+														setMouseStateForDate dateDayX (msWithClicked True);
+														setMouseState ds2 (msWithClicked False);
+														setBookedDates(bdWithFirst(Some dateDayX) <<< (bdWithPrevLast bd.Last) <<< (bdWithLast None))
 													else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
-														setClickedMouseState ds1 False;
-														setClickedMouseState ds2 False;
-														setClickedMouseStateForDate dateDayX True;
-														setFirstBookedDate (Some dateDayX);
-														setPrevLastBookedDate None;
-														setLastBookedDate None
+														setMouseState ds1 (msWithClicked False);
+														setMouseState ds2 (msWithClicked False);
+														setMouseStateForDate dateDayX (msWithClicked True);
+														setBookedDates((bdWithFirst(Some dateDayX)) <<< (bdWithLast None) <<< (bdWithPrevLast None))
 													else return ()
 											| _ => return ()
 									else return ()
@@ -250,15 +234,15 @@ fun listItems xs (c: calendar) (st: state) =
 							
 							onmouseover = {
 								fn _ =>
-									stopPropagation;
-									setOverBookedDate (Some dateDayX);
-									setOverMouseStateForDate dateDayX True
+									setBookedDates(bdWithOver(Some dateDayX));
+									setMouseStateForDate dateDayX (msWithOver True)
 							}
 							
 							onmouseout = {
 								fn _ => 
-									setOverBookedDate None;
-									List.app(fn ds => setOverMouseState ds False) st.DayMouseStates
+									setBookedDates(bdWithOver None);
+									List.app(fn ds => setMouseState ds (msWithOver False)) st.DayMouseStates;
+									setMouseStateForDate dateDayX (msWithClickedOut True)
 							}
 							
 							dynClass = { dynStyles dateDayX}
@@ -372,7 +356,7 @@ fun main () =
 				sbd <- source {First = None, Last = None, PrevLast = None, Over = None};
 				dmss <- List.mapM(
 									fn dmy => 
-										sms <- source {Over = False, Clicked = False};
+										sms <- source {Over = False, Clicked = False, ClickedOut = True};
 										return {MS = sms, Date = {Day = (Option.get 0 (read (dmy.1))), Month = dmy.2, Year = dmy.3}}
 								) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c)) acc) [] (calendars c));
 				return {Calendar = sc, BookedDates = sbd, DayMouseStates = dmss}
