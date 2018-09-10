@@ -171,11 +171,15 @@ fun listItems xs (c: calendar) (st: state) =
 							((Styles.day_over, 
 								ms.Over || 
 								(isNone gs.Last && gs.First `mbf` dateDayX && dateDayX `bfEqm` gs.Over) ||
-								(isSome gs.Last && dateDayX `bfm` gs.First && gs.Over `mbfEq` dateDayX)
-							 )::
+								(isSome gs.Last && dateDayX `bfm` gs.First && gs.Over `mbfEq` dateDayX))::
 							 (Styles.day_clicked, ms.Clicked)::
-							 (Styles.day_inbetween, gs.First `mbf` dateDayX && (dateDayX `bfEqmOr` gs.Last)(dateDayX `bfEqm` gs.PrevLast))::
-							 (Styles.day_fade, gs.ClickedOut && gs.First `mbfEq` dateDayX && dateDayX `bfm` gs.Over && dateDayX `bfEqm` gs.Last)::[]
+							 (Styles.day_inbetween,
+							  gs.First `mbf` dateDayX && (dateDayX `bfEqmOr` gs.Last)(dateDayX `bfEqm` gs.PrevLast))::
+							 (Styles.day_fade,
+						 	  gs.ClickedOut && 
+						 	  ((gs.First `mbfEq` dateDayX && dateDayX `bfm` gs.Over && dateDayX `bfEqm` gs.Last) ||
+					 	  	(isNone gs.Last && gs.Over `mbf` dateDayX && dateDayX `bfEqm` gs.PrevLast))
+						 	 )::[]
 						 	)
 						)
 			| None => return Styles.days_item
@@ -207,14 +211,14 @@ fun listItems xs (c: calendar) (st: state) =
 													else if isSome gs.First && isSome gs.Last && gs.Last `mbfEq` dateDayX then
 														setMouseState ds (msWithClicked False);
 														setMouseStateForDate dateDayX (msWithClicked True);
-														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast None) <<< (gsWithLast None))
+														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast None) <<< (gsWithLast None) <<< (gsWithClickedOut False))
 													else return ()
 											| ds1::ds2::[] =>
 													if dateDayX `bf` ds1.Date || dateDayX `bf` ds2.Date then
 														setMouseState ds1 (msWithClicked False);
 														setMouseStateForDate dateDayX (msWithClicked True);
 														setMouseState ds2 (msWithClicked False);
-														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast gs.Last) <<< (gsWithLast None))
+														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast gs.Last) <<< (gsWithLast None) <<< (gsWithClickedOut False))
 													else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
 														setMouseState ds1 (msWithClicked False);
 														setMouseState ds2 (msWithClicked False);

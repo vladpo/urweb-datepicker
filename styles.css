@@ -70,6 +70,9 @@
   -moz-animation: fade-out-in 1s 2;
   -o-animation: fade-out-in 1s 2;
   animation: fade-out-in 1s 2;
+  -moz-animation-delay: 300ms;
+  -webkit-animation-delay: 300ms;
+  animation-delay: 300ms;
 }
 
 @-webkit-keyframes fade-out-in {
