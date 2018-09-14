@@ -13,7 +13,9 @@ fun bfEq(d1: date)(d2: date) = d1 = d2 || (bf d1 d2)
 fun af(d1: date)(d2: date) = not(d1 = d2) && not(bf d1 d2)
 
 fun between(d1: date)(d2: date, d3: date) = bf d2 d1 && bf d1 d3
-	
+
+fun betweenEq(d1: date)(d2: date, d3: date) = bfEq d2 d1 && bfEq d1 d3
+
 fun mbf(md1: option date)(d2: date): bool = mpOr (fn d => bf d d2) md1 False
 
 fun bfm(d1: date)(md2: option date): bool = mpOr (fn d => bf d1 d) md2 False

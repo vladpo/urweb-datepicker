@@ -10,6 +10,8 @@ $/list
 $/option
 $/string
 $/datetime
+range
+stringOps
 optOps
 dateOps
 styles

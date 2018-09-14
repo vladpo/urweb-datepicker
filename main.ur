@@ -1,6 +1,8 @@
 open Styles
 open DateOps
 open OptOps
+open Range
+open StringOps
 
 type calendar = {CurrentYear: int, Date: date}
 type months = list (int * string)
@@ -9,6 +11,33 @@ type mouseState = {Over: bool, Clicked: bool}
 type dayState = {MS: source mouseState, Date: date}
 type globalStates = {First: option date, Last: option date, PrevLast: option date, Over: option date, ClickedOut: bool}
 type state = {Calendar: source calendar, GlobalStates: source globalStates, DayMouseStates: list dayState}
+
+type calEntry = {First: date, Last: date}
+table calendar: {Id: int, First: string, Last: string, Approved: bool}
+
+
+fun asDate md mm my = 
+	case (md, mm, my) of
+		| (Some d, Some m, Some y) => Some {Day = d, Month = m, Year = y}
+		| _ => None
+
+fun queryAllApproved () =
+	query(SELECT  FROM calendar AS T WHERE calendar.Approved = True)
+	(fn r acc => 
+		let
+			val c = #"-"
+			fun mRead ms = Option.bind(fn s => read s) ms
+			fun day s = mRead(nthSplit s c 1)
+			fun month s = mRead(nthSplit s c 2)
+			fun year s = mRead(nthSplit s c 3)
+			fun toDate s = asDate(day s)(month s)(year s)
+		in
+			case (toDate r.First, toDate r.Last) of
+				| (Some first, Some last) => return ({First = first , Last = last}::acc)
+				| _ => return acc
+		end
+	)
+	[]
 
 val allMonths: months = 
 	(0, "Ianuarie") ::
@@ -30,20 +59,20 @@ val weekDays =
 
 val showDayState = mkShow(fn (ds: dayState) => show ds.Date)
 
-fun calendarMenu setRecordField (sc: source calendar) : xbody = 
+fun calendarMenu modifyMonth (sc: source calendar) : xbody = 
 	<xml>
 		<button 
 			value="prev"
 			onclick={fn _ =>
 				c <- get sc;
-				set sc (setRecordField c Prev)
+				set sc (modifyMonth c Prev)
 			}
 		/>
 		<button 
 			value="next" 
 			onclick={fn _ =>
 				c <- get sc;
-				set sc (setRecordField c Next)
+				set sc (modifyMonth c Next)
 			}
 		/>
 	</xml>
@@ -106,27 +135,6 @@ fun swap [a] [b] (f: a -> a -> b) = fn x y => f y x
 fun isEmpty s = String.length s = 0
 fun nonEmpty s = not (isEmpty s)
 
-fun fillWhile [a] [b] (init: b) (f: b -> option b) (g: b -> a) : list a =
-	let
-		fun fillWhile' next acc = 
-			case (f next) of
-				| Some nextNext => fillWhile' nextNext (g next :: acc)
-				|	None => acc
-	in
-		fillWhile' init []
-	end
-
-fun filli [a] n (f: int -> a) : list a =
-	let
-		fun fill' i =
-			if i <= n then
-				Some(i+1)
-			else
-				None
-	in
-		fillWhile 1 fill' f
-	end
-
 fun calDays days : list string = List.rev(filli days (fn i => show i))
 
 fun listItems xs (c: calendar) (st: state) =
@@ -176,13 +184,13 @@ fun listItems xs (c: calendar) (st: state) =
 							 (Styles.day_inbetween,
 							  gs.First `mbf` dateDayX && (dateDayX `bfEqmOr` gs.Last)(dateDayX `bfEqm` gs.PrevLast))::
 							 (Styles.day_fade,
-						 	  gs.ClickedOut && 
+						 	  gs.ClickedOut &&
 						 	  ((gs.First `mbfEq` dateDayX && dateDayX `bfm` gs.Over && dateDayX `bfEqm` gs.Last) ||
-					 	  	(isNone gs.Last && gs.Over `mbf` dateDayX && dateDayX `bfEqm` gs.PrevLast))
+					 	  	(isNone gs.Last && gs.First `mbfEq` dateDayX && gs.Over `mbf` dateDayX && dateDayX `bfEqm` gs.PrevLast))
 						 	 )::[]
 						 	)
 						)
-			| None => return Styles.days_item
+			| None => return (if dateDayX.Day = 0 then Styles.days_item else (classes Styles.days_item Styles.day_disabled))
 	in
 		List.mapX(
 			fn x => 
@@ -194,51 +202,57 @@ fun listItems xs (c: calendar) (st: state) =
 							onclick = {
 								fn _ =>
 									gs <- get st.GlobalStates;
-									if nonEmpty x then
-										(filterClicked: list dayState) <- filterClickedM;
-										case filterClicked of 
-											|	[] => 
+									(filterClicked: list dayState) <- filterClickedM;
+									case (filterClicked, x, findDayState dateDayX) of 
+										| (_, "", _) => return ()
+										| (_, _, None) => return ()
+										|	([], _, _) => 
+												setMouseStateForDate dateDayX (msWithClicked True);
+												setGlobalStates(gsWithFirst (Some dateDayX))
+										|	(ds::[], _, _) => 
+												if isNone gs.Last && (ds.Date `bf` dateDayX || ds.Date = dateDayX) then
 													setMouseStateForDate dateDayX (msWithClicked True);
-													setGlobalStates(gsWithFirst (Some dateDayX))
-											|	ds::[] => 
-													if isNone gs.Last && (ds.Date `bf` dateDayX || ds.Date = dateDayX) then
-														setMouseStateForDate dateDayX (msWithClicked True);
-														setGlobalStates((gsWithPrevLast None) <<< (gsWithLast(Some dateDayX)) <<< (gsWithClickedOut False))
-													else if dateDayX `bf` ds.Date then
-														setMouseState ds (msWithClicked False);
-														setMouseStateForDate dateDayX (msWithClicked True);
-														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithLast None) <<< (gsWithPrevLast None))
-													else if isSome gs.First && isSome gs.Last && gs.Last `mbfEq` dateDayX then
-														setMouseState ds (msWithClicked False);
-														setMouseStateForDate dateDayX (msWithClicked True);
-														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast None) <<< (gsWithLast None) <<< (gsWithClickedOut False))
-													else return ()
-											| ds1::ds2::[] =>
-													if dateDayX `bf` ds1.Date || dateDayX `bf` ds2.Date then
-														setMouseState ds1 (msWithClicked False);
-														setMouseStateForDate dateDayX (msWithClicked True);
-														setMouseState ds2 (msWithClicked False);
-														setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast gs.Last) <<< (gsWithLast None) <<< (gsWithClickedOut False))
-													else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
-														setMouseState ds1 (msWithClicked False);
-														setMouseState ds2 (msWithClicked False);
-														setMouseStateForDate dateDayX (msWithClicked True);
-														setGlobalStates((gsWithFirst(Some dateDayX)) <<< (gsWithLast None) <<< (gsWithPrevLast None))
-													else return ()
-											| _ => return ()
-									else return ()
+													setGlobalStates((gsWithPrevLast None) <<< (gsWithLast(Some dateDayX)) <<< (gsWithClickedOut False))
+												else if dateDayX `bf` ds.Date then
+													setMouseState ds (msWithClicked False);
+													setMouseStateForDate dateDayX (msWithClicked True);
+													setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithLast None) <<< (gsWithPrevLast None))
+												else if isSome gs.First && isSome gs.Last && gs.Last `mbfEq` dateDayX then
+													setMouseState ds (msWithClicked False);
+													setMouseStateForDate dateDayX (msWithClicked True);
+													setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast None) <<< (gsWithLast None) <<< (gsWithClickedOut False))
+												else return ()
+										| (ds1::ds2::[], _, _) =>
+												if dateDayX `bf` ds1.Date || dateDayX `bf` ds2.Date then
+													setMouseState ds1 (msWithClicked False);
+													setMouseStateForDate dateDayX (msWithClicked True);
+													setMouseState ds2 (msWithClicked False);
+													setGlobalStates(gsWithFirst(Some dateDayX) <<< (gsWithPrevLast gs.Last) <<< (gsWithLast None) <<< (gsWithClickedOut False))
+												else if ds2.Date = dateDayX || ds2.Date `bf` dateDayX then
+													setMouseState ds1 (msWithClicked False);
+													setMouseState ds2 (msWithClicked False);
+													setMouseStateForDate dateDayX (msWithClicked True);
+													setGlobalStates((gsWithFirst(Some dateDayX)) <<< (gsWithLast None) <<< (gsWithPrevLast None))
+												else return ()
+										| _ => return ()
 							}
 							
 							onmouseover = {
 								fn _ =>
-									setGlobalStates(gsWithOver(Some dateDayX));
-									setMouseStateForDate dateDayX (msWithOver True)
+									case (findDayState dateDayX) of
+										|	Some _ =>
+												setGlobalStates(gsWithOver(Some dateDayX));
+												setMouseStateForDate dateDayX (msWithOver True)
+										| None => return ()
 							}
 							
 							onmouseout = {
 								fn _ => 
-									setGlobalStates((gsWithOver None) <<< (gsWithClickedOut True));
-									List.app(fn ds => setMouseState ds (msWithOver False)) st.DayMouseStates
+									case (findDayState dateDayX) of
+										|	Some _ =>
+												setGlobalStates((gsWithOver None) <<< (gsWithClickedOut True));
+												List.app(fn ds => setMouseState ds (msWithOver False)) st.DayMouseStates
+										| None => return ()
 							}
 							
 							dynClass = { dynStyles dateDayX}
@@ -324,19 +338,17 @@ fun main () =
 	let
 		val lastDate: date = {Day = 23, Month = 8, Year = 2019}
 		
-		val boundedCalDays: calendar -> list string =
-			fn (c: calendar) =>
+		fun boundedCalDays c cc ces =
 				let
-					val cmd: int = currentMonthDays c
-					val c': calendar = withName[#Date] c lastDate
-					val cmd': int = currentMonthDays c'
-					val cds: list string = calDays cmd
-					val cds': list string = calDays cmd'
+					val cmd: int = currentMonthDays c	
 				in
-					if c.Date `bf` lastDate then
-						cds
-					else
-						cds'
+					List.filter
+						(fn i => not (List.exists(fn ce => {Day = getOr (read i) 0, Month = c.Date.Month, Year = c.Date.Year} `betweenEq` (ce.First, ce.Last)) ces))
+						(if c.Date.Month = lastDate.Month && c.Date.Year = lastDate.Year then
+							List.rev(filli lastDate.Day (fn i => show i))
+						else if c.Date = cc.Date then 
+							List.rev(fillRange cc.Date.Day cmd (fn i => show i))
+						else calDays cmd)
 				end
 		
 		fun calendars c : list calendar = fillWhile c (fn c => if c.Date `bf` lastDate then Some(nextCalMonth c) else None) identity
@@ -344,17 +356,18 @@ fun main () =
 		fun mapDayMonthYear c = List.mp(fn d => (d, c.Date.Month, c.Date.Year))
 
 		val initState : transaction state = 
+			approved <- queryAllApproved ();
 			t <- now;
 			let
-				val c = {CurrentYear = datetimeYear t, Date = {Day = datetimeDay t, Month = datetimeMonth t, Year = datetimeYear t}}
+				val cc = {CurrentYear = datetimeYear t, Date = {Day = datetimeDay t, Month = datetimeMonth t, Year = datetimeYear t}}
 			in
-				sc <- source c;
+				sc <- source cc;
 				sbd <- source {First = None, Last = None, PrevLast = None, Over = None, ClickedOut = True};
 				dmss <- List.mapM(
 									fn dmy => 
 										sms <- source {Over = False, Clicked = False};
 										return {MS = sms, Date = {Day = (Option.get 0 (read (dmy.1))), Month = dmy.2, Year = dmy.3}}
-								) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c)) acc) [] (calendars c));
+								) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c cc approved)) acc) [] (calendars cc));
 				return {Calendar = sc, GlobalStates = sbd, DayMouseStates = dmss}
 			end
 	in

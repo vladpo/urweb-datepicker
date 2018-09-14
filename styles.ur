@@ -6,3 +6,4 @@ style day_over
 style day_clicked
 style day_inbetween
 style day_fade
+style day_disabled
