@@ -10,34 +10,54 @@ datatype action = Prev | Next
 type mouseState = {Over: bool, Clicked: bool}
 type dayState = {MS: source mouseState, Date: date}
 type globalStates = {First: option date, Last: option date, PrevLast: option date, Over: option date, ClickedOut: bool}
-type state = {Calendar: source calendar, GlobalStates: source globalStates, DayMouseStates: list dayState}
+type calSources = {Calendar: source calendar, GlobalStates: source globalStates, DayMouseStates: list dayState}
 
 type calEntry = {First: date, Last: date}
-table calendar: {Id: int, First: string, Last: string, Approved: bool}
+val showCalEntry = mkShow(fn (ce: calEntry) => "First: "^(show ce.First)^" -> Last: "^(show ce.Last))
 
+table bookDate: {Id: int, First: string, Last: string, Approved: bool}
+	PRIMARY KEY Id
+sequence bookDate_seq
 
 fun asDate md mm my = 
 	case (md, mm, my) of
 		| (Some d, Some m, Some y) => Some {Day = d, Month = m, Year = y}
 		| _ => None
 
-fun queryAllApproved () =
-	query(SELECT  FROM calendar AS T WHERE calendar.Approved = True)
+fun queryAllApproved (): transaction (list calEntry) =
+	query(SELECT * FROM bookDate WHERE bookDate.Approved={[True]})
 	(fn r acc => 
 		let
 			val c = #"-"
 			fun mRead ms = Option.bind(fn s => read s) ms
-			fun day s = mRead(nthSplit s c 1)
-			fun month s = mRead(nthSplit s c 2)
-			fun year s = mRead(nthSplit s c 3)
+			fun day s = mRead(nthSplit s c 0)
+			fun month s = mRead(nthSplit s c 1)
+			fun year s = mRead(nthSplit s c 2)
 			fun toDate s = asDate(day s)(month s)(year s)
 		in
-			case (toDate r.First, toDate r.Last) of
-				| (Some first, Some last) => return ({First = first , Last = last}::acc)
+			case (toDate r.BookDate.First, toDate r.BookDate.Last) of
+				| (Some first, Some last) => return (({First = first , Last = last})::acc)
 				| _ => return acc
 		end
 	)
 	[]
+
+fun bookDates mfirst mlast = 
+	let
+		fun toString md = 
+			Option.bind(
+				fn d =>
+					case (show d.Day, show d.Month, show d.Year) of
+						| (day, month, year) => Some (day^"-"^month^"-"^year)
+						| _ => None) md
+	in
+		case (toString mfirst, toString mlast) of
+		| (Some first, Some last) =>  
+				id <- nextval bookDate_seq;
+				dml(INSERT INTO bookDate (Id, First, Last, Approved) VALUES ({[id]}, {[first]}, {[last]}, {[True]}));
+				return ()
+		| _ => return ()
+	end
 
 val allMonths: months = 
 	(0, "Ianuarie") ::
@@ -137,7 +157,7 @@ fun nonEmpty s = not (isEmpty s)
 
 fun calDays days : list string = List.rev(filli days (fn i => show i))
 
-fun listItems xs (c: calendar) (st: state) =
+fun listItems xs (c: calendar) (st: calSources) =
 	let
 		val filterClickedM: transaction (list dayState) = 
 			List.filterM(
@@ -272,7 +292,7 @@ fun skipDays c =
 		filli k (fn _ => "")
 	end
 
-fun calendarWidget (st: state) = 
+fun calendarWidget (st: calSources) = 
 		<xml>
 		{calendarMenu 
 			(fn c (a: action) => 
@@ -355,7 +375,7 @@ fun main () =
 		
 		fun mapDayMonthYear c = List.mp(fn d => (d, c.Date.Month, c.Date.Year))
 
-		val initState : transaction state = 
+		val initState : transaction calSources = 
 			approved <- queryAllApproved ();
 			t <- now;
 			let
@@ -371,14 +391,22 @@ fun main () =
 				return {Calendar = sc, GlobalStates = sbd, DayMouseStates = dmss}
 			end
 	in
-		inits <- initState;
+		cs <- initState;
 		return
 			<xml>
 				<head>
 					<link rel="stylesheet" href="/styles.css"/>
 				</head>
 				<body>
-					{calendarWidget inits}
+					{calendarWidget cs}
+					<br/>
+					<button value="Book" 
+						onclick={
+							fn _ => 
+								gs <- get cs.GlobalStates;
+								rpc (bookDates gs.First gs.Last);
+								redirect (bless "/")
+						}/>
 				</body>
 			</xml>
 	end

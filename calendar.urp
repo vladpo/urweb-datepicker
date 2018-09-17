@@ -5,6 +5,7 @@ allow requestHeader *
 allow meta *
 rewrite url Main/main
 rewrite style Styles/* [-]
+database dbname=bookeddate
 
 $/list
 $/option

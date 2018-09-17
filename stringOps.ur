@@ -1,9 +1,11 @@
-fun nthSplit s ch n = 
+fun splits s ch = 
 	let
-		fun nthSplit' s acc = 
+		fun splits' s acc = 
 			case (String.split s ch) of 
-				| Some(x, s') => nthSplit' s' (x::acc)
-				| None => List.rev acc
+				| Some(x, s') => splits' s' (x::acc)
+				| None => List.rev (s::acc)
 	in
-		List.nth (nthSplit' s []) n
+		splits' s []
 	end
+
+fun nthSplit s ch n = List.nth(splits s ch) n
