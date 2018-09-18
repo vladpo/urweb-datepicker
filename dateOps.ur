@@ -20,6 +20,12 @@ fun mbf(md1: option date)(d2: date): bool = mpOr (fn d => bf d d2) md1 False
 
 fun bfm(d1: date)(md2: option date): bool = mpOr (fn d => bf d1 d) md2 False
 
+fun bfmOr(d1: date)(md2: option date): bool -> bool = fn b => mpOr (fn d => bf d1 d) md2 b
+
+fun bfmOrTrue(d1: date)(md2: option date): bool = (bfmOr d1 md2) True
+
+fun mbfmOrTrue(md1: option date)(md2: option date): bool = mpOr(fn d1 => mpOr(fn d2 => bf d1 d2) md2 True) md1 True
+
 fun mbfEq(md1: option date)(d2: date): bool = mpOr (fn d => bfEq d d2) md1 False
 
 fun bfEqm(d1: date)(md2: option date): bool = mpOr (fn d => bfEq d1 d) md2 False

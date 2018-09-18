@@ -5,14 +5,14 @@ open Range
 open StringOps
 
 type calendar = {CurrentYear: int, Date: date}
+type calEntry = {First: date, Last: date}
 type months = list (int * string)
 datatype action = Prev | Next
 type mouseState = {Over: bool, Clicked: bool}
 type dayState = {MS: source mouseState, Date: date}
 type globalStates = {First: option date, Last: option date, PrevLast: option date, Over: option date, ClickedOut: bool}
-type calSources = {Calendar: source calendar, GlobalStates: source globalStates, DayMouseStates: list dayState}
+type calSources = {Calendar: source calendar, GlobalStates: source globalStates, DayMouseStates: list dayState, Approved: list calEntry}
 
-type calEntry = {First: date, Last: date}
 val showCalEntry = mkShow(fn (ce: calEntry) => "First: "^(show ce.First)^" -> Last: "^(show ce.Last))
 
 table bookDate: {Id: int, First: string, Last: string, Approved: bool}
@@ -25,22 +25,23 @@ fun asDate md mm my =
 		| _ => None
 
 fun queryAllApproved (): transaction (list calEntry) =
-	query(SELECT * FROM bookDate WHERE bookDate.Approved={[True]})
-	(fn r acc => 
-		let
-			val c = #"-"
-			fun mRead ms = Option.bind(fn s => read s) ms
-			fun day s = mRead(nthSplit s c 0)
-			fun month s = mRead(nthSplit s c 1)
-			fun year s = mRead(nthSplit s c 2)
-			fun toDate s = asDate(day s)(month s)(year s)
-		in
-			case (toDate r.BookDate.First, toDate r.BookDate.Last) of
-				| (Some first, Some last) => return (({First = first , Last = last})::acc)
-				| _ => return acc
-		end
-	)
-	[]
+	ces <- (query(SELECT * FROM bookDate WHERE bookDate.Approved={[True]})
+					(fn r acc => 
+						let
+							val c = #"-"
+							fun mRead ms = Option.bind(fn s => read s) ms
+							fun day s = mRead(nthSplit s c 0)
+							fun month s = mRead(nthSplit s c 1)
+							fun year s = mRead(nthSplit s c 2)
+							fun toDate s = asDate(day s)(month s)(year s)
+						in
+							case (toDate r.BookDate.First, toDate r.BookDate.Last) of
+								| (Some first, Some last) => return (({First = first , Last = last})::acc)
+								| _ => return acc
+						end
+					)
+					[]);
+	return (List.sort(fn x y => y.First `bfEq` x.First) ces)
 
 fun bookDates mfirst mlast = 
 	let
@@ -187,6 +188,10 @@ fun listItems xs (c: calendar) (st: calSources) =
 				|	Some ds => setMouseState ds f
 				| None => return ()
 
+		fun first (ce: calEntry) = ce.First
+		fun last (ce: calEntry) = ce.Last
+		fun findApproved f mFirst = Option.mp f (List.find(fn ce => mFirst `mbf` (f ce)) st.Approved)
+
 		fun dynStyles dateDayX =
 			case (findDayState dateDayX) of
 			|	Some ds =>
@@ -196,21 +201,30 @@ fun listItems xs (c: calendar) (st: calSources) =
 						(List.foldl
 							(fn (c, b) cs => if b then classes cs c else cs)
 						 	Styles.days_item
-							((Styles.day_over, 
-								ms.Over || 
+							((Styles.day_over,
+								(isNone gs.First && ms.Over) || 
 								(isNone gs.Last && gs.First `mbf` dateDayX && dateDayX `bfEqm` gs.Over) ||
-								(isSome gs.Last && dateDayX `bfm` gs.First && gs.Over `mbfEq` dateDayX))::
+								(isSome gs.Last && dateDayX `bfm` gs.First && gs.Over `mbfEq` dateDayX && dateDayX `bfmOrTrue` (findApproved first gs.Over)))::
 							 (Styles.day_clicked, ms.Clicked)::
 							 (Styles.day_inbetween,
 							  gs.First `mbf` dateDayX && (dateDayX `bfEqmOr` gs.Last)(dateDayX `bfEqm` gs.PrevLast))::
 							 (Styles.day_fade,
 						 	  gs.ClickedOut &&
 						 	  ((gs.First `mbfEq` dateDayX && dateDayX `bfm` gs.Over && dateDayX `bfEqm` gs.Last) ||
-					 	  	(isNone gs.Last && gs.First `mbfEq` dateDayX && gs.Over `mbf` dateDayX && dateDayX `bfEqm` gs.PrevLast))
-						 	 )::[]
+					 	  	(isNone gs.Last && gs.First `mbfEq` dateDayX && gs.Over `mbf` dateDayX && dateDayX `bfEqm` gs.PrevLast)))::
+							 (Styles.day_disabled,
+							 	isNone gs.Last &&
+							 	((dateDayX `bfm` gs.First) ||
+							 	(isSome gs.First && (findApproved first gs.First) `mbf` dateDayX)))::[]
 						 	)
 						)
-			| None => return (if dateDayX.Day = 0 then Styles.days_item else (classes Styles.days_item Styles.day_disabled))
+			| None => 
+					return (
+						if dateDayX.Day = 0 then
+							Styles.days_item
+						else
+							classes Styles.days_item Styles.day_disabled
+					)
 	in
 		List.mapX(
 			fn x => 
@@ -388,7 +402,7 @@ fun main () =
 										sms <- source {Over = False, Clicked = False};
 										return {MS = sms, Date = {Day = (Option.get 0 (read (dmy.1))), Month = dmy.2, Year = dmy.3}}
 								) (List.foldl(fn c acc => List.append(mapDayMonthYear c (boundedCalDays c cc approved)) acc) [] (calendars cc));
-				return {Calendar = sc, GlobalStates = sbd, DayMouseStates = dmss}
+				return {Calendar = sc, GlobalStates = sbd, DayMouseStates = dmss, Approved = approved}
 			end
 	in
 		cs <- initState;
