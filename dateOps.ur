@@ -16,9 +16,13 @@ fun between(d1: date)(d2: date, d3: date) = bf d2 d1 && bf d1 d3
 
 fun betweenEq(d1: date)(d2: date, d3: date) = bfEq d2 d1 && bfEq d1 d3
 
+fun meq(md1: option date)(d2: date): bool = mpOr(fn d1 => d1 = d2) md1 False
+	
 fun mbf(md1: option date)(d2: date): bool = mpOr (fn d => bf d d2) md1 False
 
 fun bfm(d1: date)(md2: option date): bool = mpOr (fn d => bf d1 d) md2 False
+
+fun mbfm(md1: option date)(md2: option date): bool = mpOr(fn d1 => d1 `bfm` md2) md1 False
 
 fun bfmOr(d1: date)(md2: option date): bool -> bool = fn b => mpOr (fn d => bf d1 d) md2 b
 
@@ -33,3 +37,9 @@ fun bfEqm(d1: date)(md2: option date): bool = mpOr (fn d => bfEq d1 d) md2 False
 fun bfEqmOr(d1: date)(md2: option date): bool -> bool = fn b => mpOr (fn d => bfEq d1 d) md2 b
 
 fun betweenm(d1: date)((md2: option date), (md3: option date)): bool = mpOr(fn d2 => mpOr(fn d3 => between d1 (d2, d3)) md3 False) md2 False
+
+fun betweenEqm(d1: date)((md2: option date), (md3: option date)): bool = mpOr(fn d2 => mpOr(fn d3 => betweenEq d1 (d2, d3)) md3 False) md2 False
+
+fun betweenREqm(d1: date)((md2: option date), (md3: option date)): bool = betweenm d1 (md2, md3) || meq md3 d1
+
+fun betweenLEqm(d1: date)((md2: option date), (md3: option date)): bool = betweenm d1 (md2, md3) || meq md2 d1

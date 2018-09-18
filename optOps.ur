@@ -1,6 +1,8 @@
 val isNone = Option.isNone
 
-val isSome = Option.isSome
+fun isSome [a] (x: option a): bool = Option.isSome x
+
+fun or [a] (x: option a)(y: option a): option a = if isSome x then x else y
 
 fun getOr [a] (x: option a) (y: a) : a = Option.get y x
 

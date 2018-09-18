@@ -193,29 +193,34 @@ fun listItems xs (c: calendar) (st: calSources) =
 		fun findApproved f mFirst = Option.mp f (List.find(fn ce => mFirst `mbf` (f ce)) st.Approved)
 
 		fun dynStyles dateDayX =
-			case (findDayState dateDayX) of
+			gs <- signal st.GlobalStates;
+			let
+				val approvedAfterOver = findApproved first gs.Over
+				fun isXBetweenFirstAnd md = dateDayX `betweenREqm` (gs.First, md)
+				val isXBetweenFirstOver = isXBetweenFirstAnd gs.Over
+				val isXBetweenOverFirst = dateDayX `betweenLEqm` (gs.Over, gs.First)
+				val isXBetweenFirstLast = isXBetweenFirstAnd  gs.Last
+				val isXBetweenEqFirstLast = dateDayX `betweenEqm` (gs.First, gs.Last)
+				val isXBetweenEqFirstPrevLast = dateDayX `betweenEqm` (gs.First, gs.PrevLast)
+			in
+				case (findDayState dateDayX) of
 			|	Some ds =>
 					ms <- signal ds.MS;
-					gs <- signal st.GlobalStates;
 					return
 						(List.foldl
 							(fn (c, b) cs => if b then classes cs c else cs)
 						 	Styles.days_item
 							((Styles.day_over,
 								(isNone gs.First && ms.Over) || 
-								(isNone gs.Last && gs.First `mbf` dateDayX && dateDayX `bfEqm` gs.Over) ||
-								(isSome gs.Last && dateDayX `bfm` gs.First && gs.Over `mbfEq` dateDayX && dateDayX `bfmOrTrue` (findApproved first gs.Over)))::
+								(isNone gs.Last && isXBetweenFirstOver) ||
+								(isSome gs.Last && isXBetweenOverFirst && dateDayX `bfmOrTrue` approvedAfterOver && (gs.First `mbfmOrTrue` approvedAfterOver || gs.Over `meq` dateDayX)))::
 							 (Styles.day_clicked, ms.Clicked)::
-							 (Styles.day_inbetween,
-							  gs.First `mbf` dateDayX && (dateDayX `bfEqmOr` gs.Last)(dateDayX `bfEqm` gs.PrevLast))::
+							 (Styles.day_inbetween, dateDayX `betweenREqm` (gs.First, gs.Last `or` gs.PrevLast))::
 							 (Styles.day_fade,
 						 	  gs.ClickedOut &&
-						 	  ((gs.First `mbfEq` dateDayX && dateDayX `bfm` gs.Over && dateDayX `bfEqm` gs.Last) ||
-					 	  	(isNone gs.Last && gs.First `mbfEq` dateDayX && gs.Over `mbf` dateDayX && dateDayX `bfEqm` gs.PrevLast)))::
-							 (Styles.day_disabled,
-							 	isNone gs.Last &&
-							 	((dateDayX `bfm` gs.First) ||
-							 	(isSome gs.First && (findApproved first gs.First) `mbf` dateDayX)))::[]
+						 	  ((isXBetweenEqFirstLast && dateDayX `bfm` gs.Over) || approvedAfterOver `mbfm` gs.First) ||
+					 	  	(isXBetweenEqFirstPrevLast && gs.Over `mbf` dateDayX))::
+							 (Styles.day_disabled, isNone gs.Last && (dateDayX `bfm` gs.First || (isSome gs.First && (findApproved first gs.First) `mbf` dateDayX)))::[]
 						 	)
 						)
 			| None => 
@@ -225,6 +230,7 @@ fun listItems xs (c: calendar) (st: calSources) =
 						else
 							classes Styles.days_item Styles.day_disabled
 					)
+			end
 	in
 		List.mapX(
 			fn x => 
